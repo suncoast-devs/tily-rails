@@ -32,50 +32,68 @@ module Tily
       @instructions = []
       @tags = {}
       @memory = {}
+      @instruction_count = 0
+      @cursor = 0
     end
 
     def execute
-      instruction_count = 0
-      cursor = 0
-      while cursor < @instructions.length do
-        instruction = @instructions[cursor]
-        case instruction.name
-        when :ALLOCATE then
-          @memory[instruction.args[0]] = nil
-        when :ASSIGN then
-          label = instruction.args[0]
-          value = instruction.args[1]
-          if value == COUNT_VALUE
-            value = @tiles.count
-          end
-          @memory[label] = value
-        when :COPY then
-          value = @tiles[@memory[instruction.args[0]]]
-          @memory[instruction.args[1]] = value
-        when :INCREMENT then
-          label = instruction.args[0]
-          value = @memory[label]
-          @memory[label] = value == "Z" ? "A" : value.next
-        when :JUMP
-          cursor = @tags[instruction.args[0][TAG_EXPRESSION, 1]]
-          next
-        when :JUMP_IF_EQUAL
-          if @memory[instruction.args[0]] == @memory[instruction.args[1]]
-            cursor = @tags[instruction.args[2][TAG_EXPRESSION, 1]]
-            next
-          end
-        when :STOP then
-          case instruction.args[0]
-          when /yes/i then return true
-          when /no/i then return false
-          else return
-          end
-        end        
-
-        instruction_count += 1
-        cursor += 1
-        raise "MAX_STACK exceeded" if instruction_count >= MAX_STACK          
+      while @cursor < @instructions.length do
+        should_exit, value = *step_and_execute
+        return value if should_exit
       end
+    end
+
+    def step
+      if @cursor < @instructions.length
+        should_exit, value = *step_and_execute
+        return value if should_exit
+      end
+    end
+
+    def step_and_execute
+      @instruction_count += 1
+      raise "MAX_STACK exceeded" if @instruction_count >= MAX_STACK          
+      
+      instruction = current_instruction
+      case instruction.name
+      when :ALLOCATE then
+        @memory[instruction.args[0]] = nil
+      when :ASSIGN then
+        label = instruction.args[0]
+        value = instruction.args[1]
+        if value == COUNT_VALUE
+          value = @tiles.count
+        end
+        @memory[label] = value
+      when :COPY then
+        value = @tiles[@memory[instruction.args[0]]]
+        @memory[instruction.args[1]] = value
+      when :INCREMENT then
+        label = instruction.args[0]
+        value = @memory[label]
+        @memory[label] = value == "Z" ? "A" : value.next
+      when :JUMP
+        @cursor = @tags[instruction.args[0][TAG_EXPRESSION, 1]]
+        return
+      when :JUMP_IF_EQUAL
+        if @memory[instruction.args[0]] == @memory[instruction.args[1]]
+          @cursor = @tags[instruction.args[2][TAG_EXPRESSION, 1]]
+          return
+        end
+      when :STOP then
+        case instruction.args[0]
+        when /yes/i then return [true, true]
+        when /no/i then return [true, false]
+        else return
+        end
+      end
+      @cursor += 1
+
+      [false, nil]
+    end
+
+    def current_instruction
+      @instructions[@cursor]
     end
 
     def <<(instruction)
